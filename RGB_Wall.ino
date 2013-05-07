@@ -1,8 +1,9 @@
 /* NOTE: This sketch is made for the Arduino Ethernet.
          
+         **This one does not work!**
+         
          Changes from the last one:
-          - wipe animation
-          - fixed the bug where the last couple LED's wouldn't update reliably
+          - attempting to fade from existing colors to new ones
 */
 
 
@@ -14,13 +15,14 @@
 
 // ------------------------------- debugging -------------------------------
 
-boolean isDebugging = false;
+boolean isDebugging = true;
 
 
 
 // ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
+// (NOTE: make sure to change this in the lines below for currentColors and newColors
 int numLEDs = 160;
 
 
@@ -38,8 +40,10 @@ LPD8806 strip = LPD8806(numLEDs);
 */
 
 
-// initialize some other variables used for wiping the new colors in
-int setLEDcounter = 0;
+// initialize some other variables used for the fade animation
+int fadeSteps = 40;
+unsigned int currentColors[160][3];
+unsigned int newColors[160][3];
 
 
 
@@ -92,6 +96,10 @@ void setup() {
     Serial.print("server is at ");
     Serial.println(Ethernet.localIP());
   }
+  
+  
+  // initialize the current colors array
+  initializeCurrentColors();
 }
 
 
@@ -181,8 +189,8 @@ void loop() {
           // and send the color value to the LED function
           if (nextChar == ',' || nextChar == '.') {
             
-            // set the next LED
-            setLED(currentLED, String(incomingBuffer));
+            // store the value for this new color
+            storeNewColor(currentLED, String(incomingBuffer));
             
             
             // increment our LED counters
@@ -199,19 +207,9 @@ void loop() {
             currentBufferIndex = 0;
             
             
-            // if we reached a period, tell the strip to show its colors, and stop receiving
-            // the command
+            // if we reached a period, stop receiving the command and tell the strip to fade in
+            // its new colors
             if (nextChar == '.') {
-              
-              // show the colors
-              strip.show();
-              
-              
-              // wait a brief moment and tell the strip to show it's colors again (this fixes
-              // a bug where the last couple LED's don't update reliably the first time)
-              delay(10);
-              strip.show();
-              
               
               // set the flag to stop receiving the command
               isReceivingCommand = false;
@@ -219,6 +217,10 @@ void loop() {
               
               // output for debugging
               if (isDebugging) Serial.println("\n\nfinished command\n");
+              
+              
+              // fade in the new colors
+              fadeInNewColors();
             }
             
             
@@ -298,44 +300,29 @@ void loop() {
 
 // -------------------------- handle color commands ------------------------
 
-// set a specific LED using a hex color
-void setLED(int ledNum, String hexColor) {
+// store the value for the new color that we'll set a specific LED (using a hex color
+// as the input)
+void storeNewColor(int ledNum, String hexColor) {
   
   // if the hex isn't 6 character, just quit here
   if (hexColor.length() != 6) return;
   
   
   // separate the hex string into rgb and convert it from 8 bit (0-255) to 7 bit (0-127)
+  // then store them in the array {r, g, b}
   String hexPart;
   unsigned int r;
   unsigned int g;
   unsigned int b;
   
   hexPart = hexColor.substring(0, 2);
-  r = hexToDec(hexPart) / 2;
+  newColors[ledNum][0] = hexToDec(hexPart) / 2;
   
   hexPart = hexColor.substring(2, 4);
-  g = hexToDec(hexPart) / 2;
+  newColors[ledNum][1] = hexToDec(hexPart) / 2;
   
   hexPart = hexColor.substring(4, 6);
-  b = hexToDec(hexPart) / 2;
-  
-  
-  // set the LED to this color
-  strip.setPixelColor(ledNum, r, g, b);
-  
-  
-  // increment the counter
-  setLEDcounter++;
-  
-  
-  // if the counter has gone far enough, show the changes and start the counter over
-  // (this causes the colors to "wipe" across)
-  if (setLEDcounter == 3) {
-    
-    setLEDcounter = 0;
-    strip.show();
-  }
+  newColors[ledNum][2] = hexToDec(hexPart) / 2;
 }
 
 
@@ -359,4 +346,50 @@ unsigned int hexToDec(String hexString) {
   }
   
   return decValue;
+}
+
+
+void initializeCurrentColors() {
+  
+  for (int i = 0; i < numLEDs; i++) {
+    
+    for (int j = 0; j < 3; j++) {
+      
+      currentColors[i][j] = 0;
+    }
+  }
+}
+
+
+void fadeInNewColors() {
+  
+  // for each fade step...
+  for (int fadeStep = 1; fadeStep <= fadeSteps; fadeStep++) {
+    
+    // for each LED...
+    for (int ledNum = 0; ledNum < numLEDs; ledNum++) {
+      
+      // calculate the next color for each LED
+      unsigned int r = (((newColors[ledNum][0] - currentColors[ledNum][0]) / fadeSteps) * fadeStep) + currentColors[ledNum][0];
+      unsigned int g = (((newColors[ledNum][1] - currentColors[ledNum][1]) / fadeSteps) * fadeStep) + currentColors[ledNum][1];
+      unsigned int b = (((newColors[ledNum][2] - currentColors[ledNum][2]) / fadeSteps) * fadeStep) + currentColors[ledNum][2];
+      
+      
+      // and then set it in the strip
+      strip.setPixelColor(ledNum, r, g, b);
+    }
+    
+    
+    // show the colors (at their current fade step)
+    strip.show();
+  }
+  
+  
+  // after the fade is done, overwrite the current colors with the new colors
+  for (int i = 0; i < numLEDs; i++) {
+    
+    currentColors[i][0] = newColors[i][0];
+    currentColors[i][1] = newColors[i][1];
+    currentColors[i][2] = newColors[i][2];
+  }
 }
