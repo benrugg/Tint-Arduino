@@ -1,15 +1,10 @@
 /* NOTE: This sketch is made for the Arduino Ethernet.
          
-         **This one works with 128 LEDs**
+         **This one works with all 160 LED's!**
          
          Changes from the last one:
-          - split out the arrays into separate R/G/B component ones
-          - moved all the hardcoded strings into PROGRAM MEMORY, using the F() macro! (should save
-            some badly needed ram)
-          - realized we don't need unsigned ints becuase we're only dealing with values up to 256,
-            so I changed all the arrays to regular ints
-          - then realized that we could save a ton of memory by using bytes instead of ints, so I
-            converted all the arrays to bytes!
+          - got rid of the arrays for current R/G/B values in favor of just using the
+            strip's internal memory instead (which saves a lot of memory...)
 */
 
 
@@ -28,18 +23,15 @@ boolean isDebugging = false;
 // ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
-// (NOTE: make sure to set the lines below for the current and new arrays to this number as well!)
-int numLEDs = 128;
+// (NOTE: make sure to set the lines below for the new color arrays to this number as well!)
+int numLEDs = 160;
 
 
 // initialize some other variables used for the fade animation
 int fadeSteps = 20;
-byte currentR[128];
-byte currentG[128];
-byte currentB[128];
-byte newR[128];
-byte newG[128];
-byte newB[128];
+byte newR[160];
+byte newG[160];
+byte newB[160];
 
 
 // create an instance of the LED strip class. use pin 6 for data in (DI) and
@@ -105,10 +97,6 @@ void setup() {
     Serial.print(F("server is at "));
     Serial.println(Ethernet.localIP());
   }
-  
-  
-  // initialize the current colors array
-  initializeCurrentColors();
 }
 
 
@@ -355,29 +343,25 @@ unsigned int hexToDec(String hexString) {
 }
 
 
-void initializeCurrentColors() {
-  
-  for (int i = 0; i < numLEDs; i++) {
-    
-    currentR[i] = 0;
-    currentG[i] = 0;
-    currentB[i] = 0;
-  }
-}
-
-
 void fadeInNewColors() {
   
   // for each fade step...
-  for (int fadeStep = 1; fadeStep <= fadeSteps; fadeStep++) {
+  for (int remainingFadeSteps = fadeSteps; remainingFadeSteps >= 1; remainingFadeSteps--) {
     
     // for each LED...
     for (int ledNum = 0; ledNum < numLEDs; ledNum++) {
       
+      // get the current color value for this LED and extract its RGB components
+      uint32_t currentColor = strip.getPixelColor(ledNum);
+      byte currentG = (currentColor >> 16) & 255;
+      byte currentR = (currentColor >> 8) & 255;
+      byte currentB = currentColor & 255;
+      
+      
       // calculate the next color for each LED
-      int r = (((newR[ledNum] - currentR[ledNum]) / fadeSteps) * fadeStep) + currentR[ledNum];
-      int g = (((newG[ledNum] - currentG[ledNum]) / fadeSteps) * fadeStep) + currentG[ledNum];
-      int b = (((newB[ledNum] - currentB[ledNum]) / fadeSteps) * fadeStep) + currentB[ledNum];
+      int r = ((newR[ledNum] - currentR) / remainingFadeSteps) + currentR;
+      int g = ((newG[ledNum] - currentG) / remainingFadeSteps) + currentG;
+      int b = ((newB[ledNum] - currentB) / remainingFadeSteps) + currentB;
       
       
       // and then set it in the strip
@@ -387,19 +371,10 @@ void fadeInNewColors() {
     
     // show the colors (at their current fade step)
     strip.show();
-    delay(10);
   }
   
   
   // show the strip again, just to reliably lock in the last colors
+  delay(10);
   strip.show();
-  
-  
-  // after the fade is done, overwrite the current colors with the new colors
-  for (int i = 0; i < numLEDs; i++) {
-    
-    currentR[i] = newR[i];
-    currentG[i] = newG[i];
-    currentB[i] = newB[i];
-  }
 }
