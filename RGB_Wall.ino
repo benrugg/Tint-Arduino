@@ -9,14 +9,13 @@
 */
 
 
+#include "LPD8806.h"
+#include "SPI.h"
 #include <WiServer.h>
-//#include "LPD8806.h"
-//#include "SPI.h"
-
 
 
 // ------------------------------- Wireless set up -------------------------------
-/*
+
 #define WIRELESS_MODE_INFRA	1
 #define WIRELESS_MODE_ADHOC	2
 
@@ -46,7 +45,7 @@ unsigned char wireless_mode = WIRELESS_MODE_INFRA;
 unsigned char ssid_len;
 unsigned char security_passphrase_len;
 
-*/
+
 
 
 // ------------------------------- LED setup -------------------------------
@@ -55,9 +54,11 @@ unsigned char security_passphrase_len;
 int numLEDs = 160;
 
 
-// create an instance of the LED strip class. use hardware SPI for the writes.
-// connect data in to pin 11 and clock in to pin 13
-//LPD8806 strip = LPD8806(numLEDs);
+// create an instance of the LED strip class. use pin 6 for data in (DI) and
+// pin 8 for clock in (CI) (we're not using the faster hardware SPI (pins 11
+// and 13) because they're used by the wishield. in fact, almost all the
+// pins are used by the wishield)
+LPD8806 strip = LPD8806(numLEDs, 6, 8);
 
 
 
@@ -67,38 +68,30 @@ int numLEDs = 160;
 // this function handles url requests
 boolean handleURLRequest(char* urlCharArray) {
     
-    /*
-    // xxx old code, here for reference:
-    
-    // Check if the requested URL matches "/"
-    if (strcmp(URL, "/") == 0) {
-        // Use WiServer's print and println functions to write out the page content
-        WiServer.print("<html>");
-        WiServer.print("Hello World!");
-        WiServer.print("</html>");
-        
-        // URL was recognized
-        return true;
-    }
-    
-    // URL not found
-    return false;
-    
-    */
-    
-    
-    // make a string from the character array so we can manipulte it more easily
+    // make a string from the character array so we can manipulate it more easily
     String urlString = String(urlCharArray);
     
     
-    // parse the url to get the colors from it (in a format of 6 digit rgb hex codes, separated
-    // by commas: E690CC,EFD988,9BA456, etc) (also, convert it from 8 bit (0-255) to 7 bit (0-127))
+    // if the url doesn't contain a comma, return false (404) (this is our quick
+    // and dirty way of making sure hits like "/favicon.ico" won't mess with the
+    // LEDs)
+    if (urlString.indexOf(',') == -1) return false;
+    
+    
+    // if the first character of the string is a forward slash, remove it
+    if (urlString.charAt(0) == '/') urlString = urlString.substring(1);
+    
+    
+    // Parse the url to get the colors from it (in a format of 6 digit rgb hex codes, separated
+    // by commas: E690CC,EFD988,9BA456, etc) (also, convert it from 8 bit (0-255) to 7 bit (0-127)).
+    // As we do this, set each led to the color that is specified.
     String currentHex;
     int nextCommaIndex = 0;
     String hexPart;
     unsigned int r;
     unsigned int g;
     unsigned int b;
+    int ledNum = 0;
     
     while (urlString.length() > 0) {
       
@@ -137,7 +130,24 @@ boolean handleURLRequest(char* urlCharArray) {
       
       // xxx
       Serial.println(currentHex + ": (" + r + ", " + g + ", " + b + ")");
+      
+      
+      // set the next LED to this color
+      strip.setPixelColor(ledNum, r, g, b);
+      ledNum++;
+      
+      
+      // if we've already set all our LED's, end the loop here
+      if (ledNum >= numLEDs) break;
     }
+    
+    
+    // tell the LED strip to show its updated colors
+    strip.show();
+    
+    
+    // xxx
+    delay(1000);
     
     
     // return true to output status 200
@@ -174,24 +184,71 @@ unsigned int hexToDec(String hexString) {
 
 void setup() {
   
+  // Start up the LED strip
+  strip.begin();
+  
+  
+  // Update the strip, to start they are all 'off'
+  strip.show();
+  
+  
   // Initialize WiServer and give it the event callback function for handling requests
-  //WiServer.init(handleURLRequest);
+  WiServer.init(handleURLRequest);
+  
   
   // Enable Serial output and ask WiServer to generate log messages (optional)
   // xxx turn off verbose mode later?...
   Serial.begin(57600);
-  //WiServer.enableVerboseMode(true);
+  WiServer.enableVerboseMode(true);
 }
 
-void loop(){
+
+void loop() {
 
   // Run WiServer
-  //WiServer.server_task();
+  WiServer.server_task();
   
-  char charTest[ ] = "E690CC,EFD988,9BA460,00FF00,000000,FFFFFF,EEEEEE";
-  
-  handleURLRequest(charTest);
   
   // delay for a moment
-  delay(1000);
+  delay(10);
+}
+
+
+
+
+// ----------------------------------- test ---------------------------------
+
+void serialEvent() {
+  
+  byte incomingByte;
+  
+  // send data only when you receive data:
+  if (Serial.available() > 0) {
+    
+    // read the incoming byte:
+    incomingByte = Serial.read();
+
+    // say what you got:
+    Serial.print("I received: ");
+    Serial.println(incomingByte, DEC);
+  }
+  
+  char test1[ ] = "/FF00FF,00ee99,99cc78,ef742c";
+  Serial.println("testing the first string");
+  Serial.println(test1);
+  handleURLRequest(test1);
+  
+  delay(8000);
+  
+  char test2[ ] = "/FF00FF,00ee99,99cc78,ef742c,FF00FF,00ee99,99cc78,ef742c";
+  Serial.println("testing the second string");
+  Serial.println(test2);
+  handleURLRequest(test2);
+  
+  delay(8000);
+  
+  char test3[ ] = "/FF00FF,00ee99,99cc78,ef742c,FF00FF,00ee99,99cc78,ef742c,FF00FF,00ee99,99cc78,ef742c";
+  Serial.println("testing the third string");
+  Serial.println(test3);
+  handleURLRequest(test3);
 }
