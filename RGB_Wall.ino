@@ -1,10 +1,11 @@
 /* NOTE: This sketch is made for the Arduino Ethernet.
          
-         **This one works with all 160 LED's!**
-         
          Changes from the last one:
-          - got rid of the arrays for current R/G/B values in favor of just using the
-            strip's internal memory instead (which saves a lot of memory...)
+          - the core ethernet web server "reading" code has now been broken out
+            into several different functions
+          - we now accept other commands in the form:
+              - /c/?8046df,8046df,etc
+              - /f/?ff9900
 */
 
 
@@ -16,7 +17,7 @@
 
 // ------------------------------- debugging -------------------------------
 
-boolean isDebugging = false;
+boolean isDebugging = true;
 
 
 
@@ -28,7 +29,6 @@ int numLEDs = 160;
 
 
 // initialize some other variables used for the fade animation
-int fadeSteps = 20;
 byte newR[160];
 byte newG[160];
 byte newB[160];
@@ -113,170 +113,65 @@ void loop() {
     if (isDebugging) Serial.println(F("new client"));
     
     
-    // keep track of which LED we're setting
-    int currentLED = 0;
-    int numLEDsProcessed = 0;
+    // read the command that we received
+    char command = readCommand(client);
     
     
-    // declare variables for the buffer we're going to read in
-    char incomingBuffer[6];
-    int currentBufferIndex = 0;
-    
-    
-    // delcare flags to keep track of what we're doing
-    boolean isWaitingForCommand = true;
-    boolean isReceivingCommand = false;
-    boolean receivedInvalidCommand = false;
-    
-    
-    // declare a variable so we can know when we've received two blank lines in
-    // a row (which signifies the end of the message)
-    boolean isAtEndOfLine = true;
-    
-    
-    // while the client stays connected...
-    while (client.connected()) {
+    // output for debugging
+    if (isDebugging) {
       
-      // if there is any available incoming data...
-      if (client.available()) {
+      Serial.print(F("received command: "));
+      Serial.println(command);
+    }
+    
+    
+    // set variables that we'll use to output a response
+    int processedColors = 0;
+    boolean successfulSolidColor = false;
+    
+    
+    // if we received a command to set the colors, read and process them now
+    if (command == 'c') {
+      
+      processedColors = readAndProcessColors(client);
+      
+      
+    // else, if we received a command to flash a solid color, read and process it now
+    } else if (command == 'f') {
+      
+      successfulSolidColor = readAndFlashSolidColor(client);
+    }
+    
+    
+    // read the rest of the headers
+    readAllHeaders(client);
+    
+    
+    // write the response heaers
+    writeResponseHeaders(client);
+    
+    
+    // output the result (from whatever command we ran)
+    if (command == 'c') {
+      
+      client.print(F("processed "));
+      client.print(processedColors);
+      client.print(F(" colors"));
+      
+    } else if (command == 'f') {
+      
+      if (successfulSolidColor) {
         
-        // read the next character
-        char nextChar = client.read();
+        client.print(F("flashed solid color"));
         
+      } else {
         
-        // print what we received, for debugging
-        if (isDebugging) Serial.write(nextChar);
-        
-        
-        // if we're still waiting for a command, ignore everything until we get to a question mark or a newline
-        if (isWaitingForCommand) {
-          
-          // if we just received a newline, ignore this entire incoming message (because
-          // we didn't receive a valid command. maybe a different URL was requested, such
-          // as /favicon.ico)
-          if (nextChar == '\n') {
-            
-            // output for debugging
-            if (isDebugging) Serial.println(F("\n\nreceived an invalid command\n"));
-            
-            
-            // set the flags
-            receivedInvalidCommand = true;
-            isWaitingForCommand = false;
-            isAtEndOfLine = true;
-            
-            
-          // else, if we received a question mark, then start receiving the command
-          } else if (nextChar == '?') {
-            
-            // output for debugging
-            if (isDebugging) Serial.println(F("\n\nstarting to receive command\n"));
-            
-            
-            // set the flag
-            isWaitingForCommand = false;
-            isReceivingCommand = true;
-          }
-          
-          
-        // else, if we're receiving a command, continue parsing each character as it comes
-        } else if (isReceivingCommand) {
-          
-          // if the current character is a comma or a period, consider the buffer complete
-          // and send the color value to the LED function
-          if (nextChar == ',' || nextChar == '.') {
-            
-            // store the value for this new color
-            storeNewColor(currentLED, String(incomingBuffer));
-            
-            
-            // increment our LED counters
-            currentLED++;
-            numLEDsProcessed++;
-            
-            
-            // if we've set all the LEDs, start over at the beginning of the strip (this shouldn't
-            // happen, but it's here as a safeguard)
-            if (currentLED >= numLEDs) currentLED = 0;
-            
-            
-            // start our buffer over
-            currentBufferIndex = 0;
-            
-            
-            // if we reached a period, stop receiving the command and tell the strip to fade in
-            // its new colors
-            if (nextChar == '.') {
-              
-              // set the flag to stop receiving the command
-              isReceivingCommand = false;
-              
-              
-              // output for debugging
-              if (isDebugging) Serial.println(F("\n\nfinished command\n"));
-              
-              
-              // fade in the new colors
-              fadeInNewColors();
-            }
-            
-            
-          // else, we have a single character that we just read, so add the character to
-          // the buffer
-          } else {
-            
-            incomingBuffer[currentBufferIndex++] = nextChar;
-            
-            if (currentBufferIndex >= 6) currentBufferIndex = 0;
-          }
-          
-          
-        // else, we're waiting to get to the end of the incoming message so we can send a
-        // response
-        } else {
-          
-          // if we've reached a fully blank line, reset everything, send a reply and disconnect
-          if (nextChar == '\n' && isAtEndOfLine) {
-            
-            // send a standard http response header (with an access control header that will
-            // allow ajax requests to be called from any host)
-            client.println(F("HTTP/1.1 200 OK"));
-            client.println(F("Content-Type: text/html"));
-            client.println(F("Access-Control-Allow-Origin: *"));
-            client.println(F("Connnection: close"));
-            client.println();
-            
-            
-            // send info back about what we processed
-            if (receivedInvalidCommand) {
-              
-              client.print(F("invalid color string"));
-              
-            } else {
-              
-              client.print(F("processed "));
-              client.print(numLEDsProcessed);
-              client.print(F(" colors"));
-            }
-            
-            
-            // break out of the loop, so we can disconnect
-            break;
-          }
-          
-          
-          // if we reached the end of a line, set the flag
-          if (nextChar == '\n') {
-            
-            isAtEndOfLine = true;
-            
-          // else, if we have a real character (anything other than a carriage-return), set the flag
-          } else if (nextChar != '\r') {
-            
-            isAtEndOfLine = false;
-          }
-        }
+        client.print(F("no solid color"));
       }
+      
+    } else {
+      
+      client.print(F("invalid command"));
     }
     
     
@@ -289,9 +184,277 @@ void loop() {
     
     
     // output for debugging
-    if (isDebugging) Serial.println(F("client disonnected"));
+    if (isDebugging) Serial.println(F("client disconnected"));
   }
 }
+
+
+
+
+
+// ----------------------- handle web request/response ---------------------
+
+char readCommand(EthernetClient client) {
+  
+  // declare variables for reading in the data
+  char incomingBuffer[5];
+  int currentBufferIndex = 0;
+  boolean isReceivingCommandName = false;
+  
+  
+  // while the client stays connected, keep looping...
+  while (client.connected()) {
+    
+    // if there is any available incoming data...
+    if (client.available()) {
+      
+      // read the next character and add it to the buffer
+      char nextChar = client.read();
+      incomingBuffer[currentBufferIndex++] = nextChar;
+      
+      
+      // if we're receiving the command name...
+      if (isReceivingCommandName) {
+        
+        // if this character is a question mark, then we've received the command
+        if (nextChar == '?') {
+          
+          // if the command was blank, treat it as "c" for backwards compatibility with
+          // the older rgb wall code
+          if (incomingBuffer[0] == '?') incomingBuffer[0] = 'c';
+          
+          
+          // if the command was "c" or "f", then it's a valid command, so return it
+          if (incomingBuffer[0] == 'c' || incomingBuffer[0] == 'f') {
+            
+            return incomingBuffer[0];
+            
+            
+          // else, return "i" for invalid command
+          } else {
+            
+            return 'i';
+          }
+          
+          
+        // else, if we've read three characters and we still haven't received the command,
+        // return "i" for invalid command
+        } else if (currentBufferIndex == 3) {
+          
+          return 'i';
+        }
+        
+      // else, we're looking for the string "GET /"
+      } else {
+        
+        // if we've read the first five bytes, check to see if the first three are the value "GET"
+        if (currentBufferIndex == 5) {
+          
+          // if they are "GET", then set the flag so we'll start receiving the command name
+          if (incomingBuffer[0] == 'G' && incomingBuffer[1] == 'E' && incomingBuffer[2] == 'T') {
+            
+            // set the flag
+            isReceivingCommandName = true;
+            
+            
+            // reset the buffer that we're reading into
+            incomingBuffer[0] = incomingBuffer[1] = incomingBuffer[2] = incomingBuffer[3] = incomingBuffer[4] = ' ';
+            currentBufferIndex = 0;
+            
+            
+          // else, return "i" for invalid command
+          } else {
+            
+            return 'i';
+          }
+        }
+      }
+    }
+  }
+  
+  
+  // if for some reason the client gets disconnected, quit with "i" for invalid command
+  return 'i';
+}
+
+
+int readAndProcessColors(EthernetClient client) {
+  
+  // keep track of which LED we're setting
+  int currentLED = 0;
+  int numLEDsProcessed = 0;
+  
+  
+  // declare variables for reading in the data
+  char incomingBuffer[6];
+  int currentBufferIndex = 0;
+  unsigned long timeoutTime = millis() + 10000;
+  
+  
+  // while the client stays connected, keep looping...
+  while (client.connected()) {
+    
+    // if there is any available incoming data...
+    if (client.available()) {
+      
+      // read the next character and add it to the buffer
+      char nextChar = client.read();
+      
+      
+      // if the current character is a comma or a period, consider the buffer complete
+      // and send the color value to the LED function
+      if (nextChar == ',' || nextChar == '.') {
+        
+        // store the value for this new color
+        storeNewColor(currentLED, String(incomingBuffer));
+        
+        
+        // increment our LED counters
+        currentLED++;
+        numLEDsProcessed++;
+        
+        
+        // if we've set all the LEDs, start over at the beginning of the strip (this shouldn't
+        // happen, but it's here as a safeguard)
+        if (currentLED >= numLEDs) currentLED = 0;
+        
+        
+        // start our buffer over
+        currentBufferIndex = 0;
+        
+        
+        // if we reached a period, stop receiving the command and tell the strip to fade in
+        // its new colors
+        if (nextChar == '.') {
+          
+          // output for debugging
+          if (isDebugging) Serial.println(F("\nfinished reading colors\n"));
+          
+          
+          // fade in the new colors (at normal speed)
+          fadeInNewColors(12);
+          
+          
+          // stop here
+          return numLEDsProcessed;
+        }
+        
+        
+      // else, we have a single character that we just read, so add the character to
+      // the buffer
+      } else {
+        
+        incomingBuffer[currentBufferIndex++] = nextChar;
+        
+        if (currentBufferIndex >= 6) currentBufferIndex = 0;
+      }
+    }
+    
+    
+    // if we've been reading or waiting for more than 10 seconds, time out
+    if (millis() > timeoutTime) return 0;
+  }
+}
+
+
+boolean readAndFlashSolidColor(EthernetClient client) {
+  
+  // declare variables for reading in the data
+  char incomingBuffer[6];
+  int currentBufferIndex = 0;
+  unsigned long timeoutTime = millis() + 2000;
+  
+  
+  // while the client stays connected, keep looping...
+  while (client.connected()) {
+    
+    // if there is any available incoming data...
+    if (client.available()) {
+      
+      // read the next character and add it to the buffer
+      char nextChar = client.read();
+      incomingBuffer[currentBufferIndex++] = nextChar;
+      
+      
+      // when we get to the sixth character, flash the color and stop here
+      if (currentBufferIndex == 6) {
+        
+        flashSolidColor(String(incomingBuffer));
+        
+        return true;
+      }
+    }
+    
+    
+    // if we've been reading or waiting for more than 2 seconds, time out
+    if (millis() > timeoutTime) return false;
+  }
+  
+  
+  // if for some reason the client gets disconnected, quit and return false
+  return false;
+}
+
+
+void readAllHeaders(EthernetClient client) {
+  
+  // declare a variable so we can know when we've received two blank lines in
+  // a row (which signifies the end of the message)
+  boolean isAtEndOfLine = false;
+  unsigned long timeoutTime = millis() + 5000;
+  
+  
+  // while the client stays connected, keep looping...
+  while (client.connected()) {
+    
+    // if there is any available incoming data...
+    if (client.available()) {
+      
+      // read the next character
+      char nextChar = client.read();
+      
+      
+      // if the next character is a new line...
+      if (nextChar == '\n') {
+        
+        // if we were already at the end of a line, stop here
+        if (isAtEndOfLine) return;
+        
+        
+        // otherwise, set the flag and continue
+        isAtEndOfLine = true;
+        
+        
+      // else if the character is some other content (besides a line feed), set the flag
+      } else if (nextChar != '\r') {
+        
+        isAtEndOfLine = false;
+      }
+    }
+    
+    
+    // if we've been reading or waiting for more than 5 seconds, time out
+    if (millis() > timeoutTime) return;
+  }
+}
+
+
+void writeResponseHeaders(EthernetClient client) {
+  
+  // if the client isn't connected, just quit
+  if (!client.connected()) return;
+  
+  
+  // send a standard http response header (with an access control header that will
+  // allow ajax requests to be called from any host)
+  client.println(F("HTTP/1.1 200 OK"));
+  client.println(F("Content-Type: text/html"));
+  client.println(F("Access-Control-Allow-Origin: *"));
+  client.println(F("Connnection: close"));
+  client.println();
+}
+
+
 
 
 
@@ -343,7 +506,7 @@ unsigned int hexToDec(String hexString) {
 }
 
 
-void fadeInNewColors() {
+void fadeInNewColors(int fadeSteps) {
   
   // for each fade step...
   for (int remainingFadeSteps = fadeSteps; remainingFadeSteps >= 1; remainingFadeSteps--) {
@@ -377,4 +540,47 @@ void fadeInNewColors() {
   // show the strip again, just to reliably lock in the last colors
   delay(10);
   strip.show();
+}
+
+
+void flashSolidColor(String hexColor) {
+  
+  // get the rgb decimal value from the hex string:
+  
+  // separate the hex string into rgb and convert it from 8 bit (0-255) to 7 bit (0-127)
+  // then store them in the array {r, g, b}
+  String hexPart;
+  
+  hexPart = hexColor.substring(0, 2);
+  byte r = (byte) hexToDec(hexPart) / 2;
+  
+  hexPart = hexColor.substring(2, 4);
+  byte g = (byte) hexToDec(hexPart) / 2;
+  
+  hexPart = hexColor.substring(4, 6);
+  byte b = (byte) hexToDec(hexPart) / 2;
+  
+  
+  // set the entire strip to the new color
+  for (int ledNum = 0; ledNum < numLEDs; ledNum++) {
+    
+    strip.setPixelColor(ledNum, r, g, b);
+  }
+  
+  
+  // show the colors
+  strip.show();
+  
+  
+  // show the strip again, just to reliably lock in the color
+  delay(10);
+  strip.show();
+  
+  
+  // wait a moment
+  delay(400);
+  
+  
+  // fade the original colors back in slowly
+  fadeInNewColors(60);
 }
