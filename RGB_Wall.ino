@@ -1,11 +1,15 @@
 /* NOTE: This sketch is made for the Arduino Ethernet.
          
-         **This one only works with 64 LED's**
+         **This one works with 128 LEDs**
          
          Changes from the last one:
-          - made the colors fade! (but just found out that the arduino doesn't have enough memory
-            to be able to handle the storage for all the colors we need in our arrays. two 192
-            element arrays work, but two 288 element arrays don't)
+          - split out the arrays into separate R/G/B component ones
+          - moved all the hardcoded strings into PROGRAM MEMORY, using the F() macro! (should save
+            some badly needed ram)
+          - realized we don't need unsigned ints becuase we're only dealing with values up to 256,
+            so I changed all the arrays to regular ints
+          - then realized that we could save a ton of memory by using bytes instead of ints, so I
+            converted all the arrays to bytes!
 */
 
 
@@ -17,28 +21,31 @@
 
 // ------------------------------- debugging -------------------------------
 
-boolean isDebugging = true;
+boolean isDebugging = false;
 
 
 
 // ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
-// (NOTE: make sure to set the lines below for currentColors and newColors
-//        to 3 times this number!)
-int numLEDs = 64;
+// (NOTE: make sure to set the lines below for the current and new arrays to this number as well!)
+int numLEDs = 128;
 
 
 // initialize some other variables used for the fade animation
 int fadeSteps = 20;
-unsigned int currentColors[192];
-unsigned int newColors[192];
+byte currentR[128];
+byte currentG[128];
+byte currentB[128];
+byte newR[128];
+byte newG[128];
+byte newB[128];
 
 
 // create an instance of the LED strip class. use pin 6 for data in (DI) and
 // pin 8 for clock in (CI) (we're not using the faster hardware SPI (pins 11
 // and 13) because they're used by the Ethernet interface)
-LPD8806 strip = LPD8806(numLEDs * 2, 6, 8);
+LPD8806 strip = LPD8806(numLEDs, 6, 8);
 
 
 /*
@@ -95,7 +102,7 @@ void setup() {
   // output what IP the server is listening on
   if (isDebugging) {
     
-    Serial.print("server is at ");
+    Serial.print(F("server is at "));
     Serial.println(Ethernet.localIP());
   }
   
@@ -115,7 +122,7 @@ void loop() {
   if (client) {
     
     // output for debugging
-    if (isDebugging) Serial.println("new client");
+    if (isDebugging) Serial.println(F("new client"));
     
     
     // keep track of which LED we're setting
@@ -162,7 +169,7 @@ void loop() {
           if (nextChar == '\n') {
             
             // output for debugging
-            if (isDebugging) Serial.println("\n\nreceived an invalid command\n");
+            if (isDebugging) Serial.println(F("\n\nreceived an invalid command\n"));
             
             
             // set the flags
@@ -175,7 +182,7 @@ void loop() {
           } else if (nextChar == '?') {
             
             // output for debugging
-            if (isDebugging) Serial.println("\n\nstarting to receive command\n");
+            if (isDebugging) Serial.println(F("\n\nstarting to receive command\n"));
             
             
             // set the flag
@@ -218,7 +225,7 @@ void loop() {
               
               
               // output for debugging
-              if (isDebugging) Serial.println("\n\nfinished command\n");
+              if (isDebugging) Serial.println(F("\n\nfinished command\n"));
               
               
               // fade in the new colors
@@ -245,23 +252,23 @@ void loop() {
             
             // send a standard http response header (with an access control header that will
             // allow ajax requests to be called from any host)
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-Type: text/html");
-            client.println("Access-Control-Allow-Origin: *");
-            client.println("Connnection: close");
+            client.println(F("HTTP/1.1 200 OK"));
+            client.println(F("Content-Type: text/html"));
+            client.println(F("Access-Control-Allow-Origin: *"));
+            client.println(F("Connnection: close"));
             client.println();
             
             
             // send info back about what we processed
             if (receivedInvalidCommand) {
               
-              client.print("invalid color string");
+              client.print(F("invalid color string"));
               
             } else {
               
-              client.print("processed ");
+              client.print(F("processed "));
               client.print(numLEDsProcessed);
-              client.print(" colors");
+              client.print(F(" colors"));
             }
             
             
@@ -294,7 +301,7 @@ void loop() {
     
     
     // output for debugging
-    if (isDebugging) Serial.println("client disonnected");
+    if (isDebugging) Serial.println(F("client disonnected"));
   }
 }
 
@@ -313,18 +320,15 @@ void storeNewColor(int ledNum, String hexColor) {
   // separate the hex string into rgb and convert it from 8 bit (0-255) to 7 bit (0-127)
   // then store them in the array {r, g, b}
   String hexPart;
-  unsigned int r;
-  unsigned int g;
-  unsigned int b;
   
   hexPart = hexColor.substring(0, 2);
-  newColors[ledNum * 3] = hexToDec(hexPart) / 2;
+  newR[ledNum] = (byte) hexToDec(hexPart) / 2;
   
   hexPart = hexColor.substring(2, 4);
-  newColors[(ledNum * 3) + 1] = hexToDec(hexPart) / 2;
+  newG[ledNum] = (byte) hexToDec(hexPart) / 2;
   
   hexPart = hexColor.substring(4, 6);
-  newColors[(ledNum * 3) + 2] = hexToDec(hexPart) / 2;
+  newB[ledNum] = (byte) hexToDec(hexPart) / 2;
 }
 
 
@@ -353,32 +357,31 @@ unsigned int hexToDec(String hexString) {
 
 void initializeCurrentColors() {
   
-  for (int i = 0; i < numLEDs * 3; i++) {
+  for (int i = 0; i < numLEDs; i++) {
     
-    currentColors[i] = 0;
+    currentR[i] = 0;
+    currentG[i] = 0;
+    currentB[i] = 0;
   }
 }
 
 
 void fadeInNewColors() {
   
-  int i;
-  
   // for each fade step...
   for (int fadeStep = 1; fadeStep <= fadeSteps; fadeStep++) {
     
-    // for each LED (actually each r/g/b component of each LED)...
-    for (i = 0; i < numLEDs * 3; i += 3) {
+    // for each LED...
+    for (int ledNum = 0; ledNum < numLEDs; ledNum++) {
       
       // calculate the next color for each LED
-      unsigned int r = ((((int) newColors[i] - (int) currentColors[i]) / fadeSteps) * fadeStep) + currentColors[i];
-      unsigned int g = ((((int) newColors[i + 1] - (int) currentColors[i + 1]) / fadeSteps) * fadeStep) + currentColors[i + 1];
-      unsigned int b = ((((int) newColors[i + 2] - (int) currentColors[i + 2]) / fadeSteps) * fadeStep) + currentColors[i + 2];
+      int r = (((newR[ledNum] - currentR[ledNum]) / fadeSteps) * fadeStep) + currentR[ledNum];
+      int g = (((newG[ledNum] - currentG[ledNum]) / fadeSteps) * fadeStep) + currentG[ledNum];
+      int b = (((newB[ledNum] - currentB[ledNum]) / fadeSteps) * fadeStep) + currentB[ledNum];
       
       
       // and then set it in the strip
-      strip.setPixelColor((i / 3) * 2, r, g, b);
-      strip.setPixelColor(((i / 3) * 2) + 1, r, g, b);
+      strip.setPixelColor(ledNum, r, g, b);
     }
     
     
@@ -388,9 +391,15 @@ void fadeInNewColors() {
   }
   
   
+  // show the strip again, just to reliably lock in the last colors
+  strip.show();
+  
+  
   // after the fade is done, overwrite the current colors with the new colors
-  for (i = 0; i < numLEDs * 3; i++) {
+  for (int i = 0; i < numLEDs; i++) {
     
-    currentColors[i] = newColors[i];
+    currentR[i] = newR[i];
+    currentG[i] = newG[i];
+    currentB[i] = newB[i];
   }
 }
