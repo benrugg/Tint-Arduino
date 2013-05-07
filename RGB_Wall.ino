@@ -25,6 +25,7 @@ boolean isDebugging = false;
 int numLEDs = 160;
 
 
+
 // create an instance of the LED strip class. use pin 6 for data in (DI) and
 // pin 8 for clock in (CI) (we're not using the faster hardware SPI (pins 11
 // and 13) because they're used by the Ethernet interface)
@@ -92,6 +93,10 @@ void loop() {
     
     // output for debugging
     if (isDebugging) Serial.println("new client");
+    
+    
+    // reset the strip
+    // resetStrip();
     
     
     // keep track of which LED we're setting
@@ -303,6 +308,13 @@ void setLED(int ledNum, String hexColor) {
   
   // set the LED to this color
   strip.setPixelColor(ledNum, r, g, b);
+}
+
+
+// set the whole strip to be off
+void resetStrip() {
+  
+  for(int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, 0);
 }
 
 
