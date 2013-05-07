@@ -1,9 +1,8 @@
-/* NOTE: This sketch is made for the Arduino Ethernet. This is the first one that actually works
-         to light up the LED's through a web browser! Open the serial monitor just so you can
-         see the debugging console (and so you know what ip address the arduino is listening on)
-         Then go to the url like this:
-         http://192.168.1.82/?8046df,7d4ade,7b4cdd,784fdc,7453da,7355da,6f59d8,6e5ad7,6a5ed6,6762d5,6664d4,6267d3,6169d2,5d6dd1,5a71cf,5873cf,5576cd,5378cc,507ccb,4d80ca,4b82c9,4885c8,4687c7,438bc6,3f8fc4,3e90c4,3a94c2,3996c1,359ac0,329dbf,319fbe,2da3bd,2ca5bc,28a9bb,25acb9,23aeb9,20b2b71eb4b6,1bb7b5,18bbb4,16bdb3,1dbdb1,21beaf,28bead,2fbfab,33bfa9,3abfa7,3ec0a6,45c0a3,4dc1a1,50c1a0,58c19d,5bc19c,62c29a,6ac297,6dc396,75c394,78c393,80c490,87c48e,8bc58d,92c58a,95c589,9dc686,a4c684,a8c683,afc780,b3c77f,bac87d,c1c87a,c5c879,ccc977,d0c976,d7c973,deca71,e2ca70,e9cb6d,edcb6c,f4cb6a,fbcc67,ffcc66,ffc663,ffc261,ffbc5e,ffb65b,ffb359,ffac56,ffa954,ffa351,ff9f50,ff994d,ff9349,ff8f48,ff8945,ff8643,ff8040,ff793d,ff763b,ff7038,ff6c36,ff6633,ff6030,ff5c2e,ff562b,ff5329,ff4d26,ff4623,ff4321,ff3d1e,ff391d,ff331a,ff2d16,ff2915,ff2312,ff2010,ff1a0d,ff130a,ff1008,ff0a05,ff0603,ff0000,ff0008,ff000c,ff0014,ff0018,ff0020,ff0028,ff002d,ff0035,ff0039,ff0041,ff0049,ff004d,ff0055,ff0059,ff0061,ff0069,ff006d,ff0075,ff0079,ff0082,ff008a,ff008e,ff0096,ff009a,ff00a2,ff00aa,ff00ae,ff00b6,ff00ba,ff00c2,ff00ca,ff00ce,ff00d7,ff00db,ff00e3,ff00eb,ff00ef,ff00f7,ff00fb.
-         Or use the rgb wall website to hit that url via ajax!
+/* NOTE: This sketch is made for the Arduino Ethernet.
+         
+         Changes from the last one:
+          - wipe animation
+          - fixed the bug where the last couple LED's wouldn't update reliably
 */
 
 
@@ -39,6 +38,10 @@ LPD8806 strip = LPD8806(numLEDs);
 */
 
 
+// initialize some other variables used for wiping the new colors in
+int setLEDcounter = 0;
+
+
 
 // ---------------------------- web server setup ---------------------------
 
@@ -56,15 +59,25 @@ EthernetServer server(80);
 
 void setup() {
   
-  // Start up the LED strip
+  // wait a brief moment to give the strips a chance to get powered up
+  delay(500);
+  
+  
+  // start up the LED strip
   strip.begin();
   
   
-  // Update the strip, to start they are all 'off'
+  // update the strip, to start they are all 'off'
   strip.show();
   
   
-  // Enable Serial output for debugging
+  // wait a brief moment and tell the strip to show again (this fixes a bug
+  // where the last couple LED's don't update reliably the first time)
+  delay(10);
+  strip.show();
+  
+  
+  // enable Serial output for debugging
   if (isDebugging) Serial.begin(9600);
   
   
@@ -93,10 +106,6 @@ void loop() {
     
     // output for debugging
     if (isDebugging) Serial.println("new client");
-    
-    
-    // reset the strip
-    // resetStrip();
     
     
     // keep track of which LED we're setting
@@ -195,6 +204,12 @@ void loop() {
             if (nextChar == '.') {
               
               // show the colors
+              strip.show();
+              
+              
+              // wait a brief moment and tell the strip to show it's colors again (this fixes
+              // a bug where the last couple LED's don't update reliably the first time)
+              delay(10);
               strip.show();
               
               
@@ -308,13 +323,19 @@ void setLED(int ledNum, String hexColor) {
   
   // set the LED to this color
   strip.setPixelColor(ledNum, r, g, b);
-}
-
-
-// set the whole strip to be off
-void resetStrip() {
   
-  for(int i = 0; i < strip.numPixels(); i++) strip.setPixelColor(i, 0);
+  
+  // increment the counter
+  setLEDcounter++;
+  
+  
+  // if the counter has gone far enough, show the changes and start the counter over
+  // (this causes the colors to "wipe" across)
+  if (setLEDcounter == 3) {
+    
+    setLEDcounter = 0;
+    strip.show();
+  }
 }
 
 
