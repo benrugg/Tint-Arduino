@@ -1,11 +1,11 @@
 /* NOTE: This sketch is made for the Arduino Ethernet.
          
          Changes from the last one:
-          - the core ethernet web server "reading" code has now been broken out
-            into several different functions
-          - we now accept other commands in the form:
+          - added a function for outputting the current key colors
+          - commands that can be sent:
               - /c/?8046df,8046df,etc
               - /f/?ff9900
+              - /g/
 */
 
 
@@ -21,6 +21,7 @@ boolean isDebugging = true;
 
 
 
+
 // ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
@@ -28,10 +29,15 @@ boolean isDebugging = true;
 int numLEDs = 160;
 
 
-// initialize some other variables used for the fade animation
+// initialize the arrays to hold the new color values that we're going to fade to
 byte newR[160];
 byte newG[160];
 byte newB[160];
+
+
+// initalize a couple variables to keep track of which colors are key colors in the gradient we're displaying
+byte keyColorIndexes[20];
+byte numKeyColors = 0;
 
 
 // create an instance of the LED strip class. use pin 6 for data in (DI) and
@@ -48,6 +54,9 @@ LPD8806 strip = LPD8806(numLEDs);
 
 
 
+
+
+
 // ---------------------------- web server setup ---------------------------
 
 // set the MAC address of this specific Arduino Ethernet board
@@ -57,6 +66,10 @@ byte macAddress[] = {0x90, 0xA2, 0xDA, 0x0D, 0x27, 0x29};
 // Initialize the Ethernet server library (using DHCP for the ip address)
 // (on port 80 for HTTP)
 EthernetServer server(80);
+
+
+
+
 
 
 
@@ -148,16 +161,19 @@ void loop() {
     
     
     // write the response heaers
-    writeResponseHeaders(client);
+    boolean wasStatusOK = ((command == 'f' && successfulSolidColor) || (command == 'c' && processedColors > 0) || command == 'g');
+    writeResponseHeaders(client, wasStatusOK);
     
     
-    // output the result (from whatever command we ran)
+    // if we processed and displayed colors, output a short message
     if (command == 'c') {
       
       client.print(F("processed "));
       client.print(processedColors);
       client.print(F(" colors"));
       
+      
+    // else, if we flashed a solid color, output an acknowledgement
     } else if (command == 'f') {
       
       if (successfulSolidColor) {
@@ -169,6 +185,14 @@ void loop() {
         client.print(F("no solid color"));
       }
       
+      
+    // else, if we received a command to output our key colors, output them now
+    } else if (command == 'g') {
+      
+      outputKeyColors(client);
+      
+      
+    // else, return a message saying that we received an invalid command
     } else {
       
       client.print(F("invalid command"));
@@ -187,6 +211,11 @@ void loop() {
     if (isDebugging) Serial.println(F("client disconnected"));
   }
 }
+
+
+
+
+
 
 
 
@@ -216,16 +245,16 @@ char readCommand(EthernetClient client) {
       // if we're receiving the command name...
       if (isReceivingCommandName) {
         
-        // if this character is a question mark, then we've received the command
-        if (nextChar == '?') {
+        // if this character is a question mark or a space, then we've received the command
+        if (nextChar == '?' || nextChar == ' ') {
           
           // if the command was blank, treat it as "c" for backwards compatibility with
           // the older rgb wall code
           if (incomingBuffer[0] == '?') incomingBuffer[0] = 'c';
           
           
-          // if the command was "c" or "f", then it's a valid command, so return it
-          if (incomingBuffer[0] == 'c' || incomingBuffer[0] == 'f') {
+          // if the command was "c", "f" or "g", then it's a valid command, so return it
+          if (incomingBuffer[0] == 'c' || incomingBuffer[0] == 'f' || incomingBuffer[0] == 'g') {
             
             return incomingBuffer[0];
             
@@ -288,7 +317,14 @@ int readAndProcessColors(EthernetClient client) {
   // declare variables for reading in the data
   char incomingBuffer[6];
   int currentBufferIndex = 0;
+  
+  
+  // declare a variable for a timeout
   unsigned long timeoutTime = millis() + 10000;
+  
+  
+  // reset our count of key colors
+  numKeyColors = 0;
   
   
   // while the client stays connected, keep looping...
@@ -301,9 +337,21 @@ int readAndProcessColors(EthernetClient client) {
       char nextChar = client.read();
       
       
-      // if the current character is a comma or a period, consider the buffer complete
+      // if the current character is an asterisk, the current color is a "key" color, so
+      // add it to our array of key colors
+      if (nextChar == '*') {
+        
+        // add the index of this color as a "key" color
+        keyColorIndexes[numKeyColors++] = currentLED;
+        
+        
+        // reset the number of key colors if it gets too big (to protect against buffer overflow)
+        if (numKeyColors > 19) numKeyColors = 0;
+        
+        
+      // else, if the current character is a comma or a period, consider the buffer complete
       // and send the color value to the LED function
-      if (nextChar == ',' || nextChar == '.') {
+      } else if (nextChar == ',' || nextChar == '.') {
         
         // store the value for this new color
         storeNewColor(currentLED, String(incomingBuffer));
@@ -439,15 +487,27 @@ void readAllHeaders(EthernetClient client) {
 }
 
 
-void writeResponseHeaders(EthernetClient client) {
+void writeResponseHeaders(EthernetClient client, boolean wasRequestOK) {
   
   // if the client isn't connected, just quit
   if (!client.connected()) return;
   
   
-  // send a standard http response header (with an access control header that will
-  // allow ajax requests to be called from any host)
-  client.println(F("HTTP/1.1 200 OK"));
+  // if this request was processed successfully, output a 200 header
+  if (wasRequestOK) {
+    
+    client.println(F("HTTP/1.1 200 OK"));
+    
+    
+  // else, output a 404 header
+  } else {
+    
+    client.println(F("HTTP/1.1 404 Not Found"));
+  }
+  
+  
+  // for the rest of the header lines, send a standard http response header (including an 
+  // access control header that will allow ajax requests to be called from any host)
   client.println(F("Content-Type: text/html"));
   client.println(F("Access-Control-Allow-Origin: *"));
   client.println(F("Connnection: close"));
@@ -458,7 +518,13 @@ void writeResponseHeaders(EthernetClient client) {
 
 
 
-// -------------------------- handle color commands ------------------------
+
+
+
+
+
+
+// -------------------------- process gradient color commands ------------------------
 
 // store the value for the new color that we'll set a specific LED (using a hex color
 // as the input)
@@ -480,29 +546,6 @@ void storeNewColor(int ledNum, String hexColor) {
   
   hexPart = hexColor.substring(4, 6);
   newB[ledNum] = (byte) hexToDec(hexPart) / 2;
-}
-
-
-unsigned int hexToDec(String hexString) {
-  
-  // NOTE: This function can handle a positive hex value from 0 - 65,535 (a four digit hex string).
-  //       For larger/longer values, change "unsigned int" to "long" in both places.
-  
-  unsigned int decValue = 0;
-  int nextInt;
-  
-  for (int i = 0; i < hexString.length(); i++) {
-    
-    nextInt = int(hexString.charAt(i));
-    if (nextInt >= 48 && nextInt <= 57) nextInt = map(nextInt, 48, 57, 0, 9);
-    if (nextInt >= 65 && nextInt <= 70) nextInt = map(nextInt, 65, 70, 10, 15);
-    if (nextInt >= 97 && nextInt <= 102) nextInt = map(nextInt, 97, 102, 10, 15);
-    nextInt = constrain(nextInt, 0, 15);
-    
-    decValue = (decValue * 16) + nextInt;
-  }
-  
-  return decValue;
 }
 
 
@@ -542,6 +585,16 @@ void fadeInNewColors(int fadeSteps) {
   strip.show();
 }
 
+
+
+
+
+
+
+
+
+
+// -------------------------- flash a solid color --------------------------
 
 void flashSolidColor(String hexColor) {
   
@@ -584,3 +637,89 @@ void flashSolidColor(String hexColor) {
   // fade the original colors back in slowly
   fadeInNewColors(60);
 }
+
+
+
+
+
+
+
+
+
+
+// ------------------------- output our key colors -------------------------
+
+void outputKeyColors(EthernetClient client) {
+  
+  // if we don't have any key colors, output #000000
+  if (numKeyColors == 0) {
+    
+    client.print(F("#000000"));
+    
+    
+  // else, loop through the key colors and output them
+  } else {
+    
+    for (int i = 0; i < numKeyColors; i++) {
+      
+      client.print(F("#"));
+      
+      client.print(decToHex(newR[keyColorIndexes[i]] * 2, 2));
+      client.print(decToHex(newG[keyColorIndexes[i]] * 2, 2));
+      client.print(decToHex(newB[keyColorIndexes[i]] * 2, 2));
+      
+      client.print(F(" "));
+      client.print(round(((float) keyColorIndexes[i] / (numLEDs - 1)) * 100));
+      client.print(F("%"));
+      
+      if (i + 1 < numKeyColors) client.print(F(","));
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+// ---------------------- hex/dec color conversion utilities -----------------------
+
+unsigned int hexToDec(String hexString) {
+  
+  // NOTE: This function can handle a positive hex value from 0 - 65,535 (a four digit hex string).
+  //       For larger/longer values, change "unsigned int" to "long" in both places.
+  
+  unsigned int decValue = 0;
+  int nextInt;
+  
+  for (int i = 0; i < hexString.length(); i++) {
+    
+    nextInt = int(hexString.charAt(i));
+    if (nextInt >= 48 && nextInt <= 57) nextInt = map(nextInt, 48, 57, 0, 9);
+    if (nextInt >= 65 && nextInt <= 70) nextInt = map(nextInt, 65, 70, 10, 15);
+    if (nextInt >= 97 && nextInt <= 102) nextInt = map(nextInt, 97, 102, 10, 15);
+    nextInt = constrain(nextInt, 0, 15);
+    
+    decValue = (decValue * 16) + nextInt;
+  }
+  
+  return decValue;
+}
+
+
+String decToHex(byte decValue, byte desiredStringLength) {
+  
+  // NOTE: This function can handle a positive decimal value from 0 - 255, and it will pad it
+  //       with 0's (on the left) if it is less than the desired string length.
+  //       For larger/longer values, change "byte" to "unsigned int" or "long" for the decValue parameter.
+  
+  String hexString = String(decValue, HEX);
+  while (hexString.length() < desiredStringLength) hexString = "0" + hexString;
+  
+  return hexString;
+}
+
