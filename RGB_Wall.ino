@@ -1,6 +1,55 @@
-#include "LPD8806.h"
-#include "SPI.h"
+/* NOTE: In order to compile this sketch, first make sure to edit apps-conf.h in the WiShield library so
+         it defines APP_WISERVER and doesn't define APP_WEBSERVER
+*/
 
+/* NOTE: This sketch seems to work unreliably unless it's given some time to run between restarts. It
+         also may need to be restarted once or twice to actually work. (Try closing and reopening the
+         serial monitor to restart it). (Also, remember to wait a full minute for everything to start
+         and the red light to turn on).
+*/
+
+
+#include <WiServer.h>
+//#include "LPD8806.h"
+//#include "SPI.h"
+
+
+
+// ------------------------------- Wireless set up -------------------------------
+
+#define WIRELESS_MODE_INFRA	1
+#define WIRELESS_MODE_ADHOC	2
+
+unsigned char local_ip[] = {192,168,1,150};	// IP address of WiShield
+unsigned char gateway_ip[] = {192,168,1,254};	// router or gateway IP address
+unsigned char subnet_mask[] = {255,255,255,0};	// subnet mask for the local network
+const prog_char ssid[] PROGMEM = {"NewWorld"};		// max 32 bytes
+
+unsigned char security_type = 2;	// 0 - open; 1 - WEP; 2 - WPA; 3 - WPA2
+
+// WPA/WPA2 passphrase
+const prog_char security_passphrase[] PROGMEM = {"Espionage99"};	// max 64 characters
+
+// WEP 128-bit keys
+// sample HEX keys
+prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,	// Key 0
+				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// Key 1
+				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// Key 2
+				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00	// Key 3
+				};
+
+// setup the wireless mode
+// infrastructure - connect to AP
+// adhoc - connect to another WiFi device
+unsigned char wireless_mode = WIRELESS_MODE_INFRA;
+
+unsigned char ssid_len;
+unsigned char security_passphrase_len;
+
+
+
+
+// ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
 int numLEDs = 160;
@@ -8,177 +57,114 @@ int numLEDs = 160;
 
 // create an instance of the LED strip class. use hardware SPI for the writes.
 // connect data in to pin 11 and clock in to pin 13
-LPD8806 strip = LPD8806(numLEDs);
+//LPD8806 strip = LPD8806(numLEDs);
 
+
+
+
+// -------------------------- handle color commands ------------------------
+
+// this function handles url requests
+boolean handleURLRequest(char* urlString) {
+    
+    /*
+    // xxx old code, here for reference:
+    
+    // Check if the requested URL matches "/"
+    if (strcmp(URL, "/") == 0) {
+        // Use WiServer's print and println functions to write out the page content
+        WiServer.print("<html>");
+        WiServer.print("Hello World!");
+        WiServer.print("</html>");
+        
+        // URL was recognized
+        return true;
+    }
+    
+    // URL not found
+    return false;
+    
+    */
+    
+    
+    // parse the url to get the colors from it
+    int i = 0;
+    int currentNumber = 0;
+    int currentNumDigits = 0;
+    char currentChar;
+    
+    while(urlString[i] != '\0') {
+      
+      // get the current character in the string
+      currentChar = urlString[i];
+      
+      
+      // as a fail-safe, quit if we've been processing more than a certain number of digits
+      i++;
+      if (i > 100) break;
+      
+      
+      // if our character is not a number or a comma, skip it
+      if (byte(currentChar) != 44 && (byte(currentChar) < 48 || byte(currentChar) > 57)) continue;
+      
+      
+      // if we've added up more than 3 digits, skip this number
+      if (currentNumDigits > 3) {
+        
+        currentNumber = 0;
+        currentNumDigits = 0;
+        
+        continue;
+      }
+      
+      
+      // when we get to a comma, then we've got our number
+      if (currentChar == ',') {
+        
+        Serial.println(currentNumber);
+        
+        currentNumber = 0;
+        currentNumDigits = 0;
+        
+        continue;
+      }
+      
+      
+      // otherwise, add the current character to our number
+      currentNumber = (currentNumber * 10) + (int(currentChar) - 48);
+      currentNumDigits++;
+    }
+    
+    
+    // print the last number
+    Serial.println(currentNumber);
+    
+    
+    // return true to output status 200
+    return true;
+}
+
+
+
+
+// -------------------------- core runtime functions ------------------------
 
 void setup() {
-  // Start up the LED strip
-  strip.begin();
-
-  // Update the strip, to start they are all 'off'
-  strip.show();
+  
+  // Initialize WiServer and give it the event callback function for handling requests
+  WiServer.init(handleURLRequest);
+  
+  // Enable Serial output and ask WiServer to generate log messages (optional)
+  // xxx turn off verbose mode later?...
+  Serial.begin(57600);
+  WiServer.enableVerboseMode(true);
 }
 
+void loop(){
 
-void loop() {
+  // Run WiServer
+  WiServer.server_task();
   
-  // flash four times in blue
-  for (int i = 0; i < 4; i++) {
-    
-    setSolidColor(strip.Color(0, 0, 127));
-    delay(400);
-    turnOff();
-    delay(400);
-  }
-  
-  
-  // color wipe purple
-  colorWipe(strip.Color(127, 0, 127), 10);
-  delay(400);
-  
-  
-  // turn off for a moment
-  turnOff();
-  delay(400);
-  
-  
-  /*
-  // Send a simple pixel chase in...
-  colorChase(strip.Color(127,0,0), 10);  	// full brightness red
-  colorChase(strip.Color(127,127,0), 10);	// orange
-  colorChase(strip.Color(0,127,0), 10);		// green
-  colorChase(strip.Color(0,127,127), 10);	// teal
-  colorChase(strip.Color(0,0,127), 10);		// blue
-  colorChase(strip.Color(127,0,127), 10);	// violet
-
-  // fill the entire strip with...
-  colorWipe(strip.Color(127,0,0), 10);		// red
-  colorWipe(strip.Color(0, 127,0), 10);		// green
-  colorWipe(strip.Color(0,0,127), 10);		// blue
-
-  rainbow(10);
-  rainbowCycle(0);  // make it go through the cycle fairly fast
-  */
-}
-
-
-void setSolidColor(uint32_t color) {
-  
-  for (int i = 0; i < strip.numPixels(); i++) {
-    
-    strip.setPixelColor(i, color);
-  }
-  strip.show();
-}
-
-
-void turnOff() {
-  
-  setSolidColor(0);
-}
-
-
-void fadeWhite(uint8_t wait) {
-  
-  int i, j;
-  
-  for (i = 0; i < strip.numPixels(); i++) {
-    for (j = 0; j < 128; j++) {
-      strip.setPixelColor(i, j + (i * 10), j + (i * 10), j + (i * 10));
-      strip.show();
-    }
-    delay(wait);
-  }
-}
-
-void rainbow(uint8_t wait) {
-  int i, j;
-   
-  for (j=0; j < 384; j++) {     // 3 cycles of all 384 colors in the wheel
-    for (i=0; i < strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel( (i + j) % 384));
-    }  
-    strip.show();   // write all the pixels out
-    delay(wait);
-  }
-}
-
-// Slightly different, this one makes the rainbow wheel equally distributed 
-// along the chain
-void rainbowCycle(uint8_t wait) {
-  uint16_t i, j;
-  
-  for (j=0; j < 384 * 5; j++) {     // 5 cycles of all 384 colors in the wheel
-    for (i=0; i < strip.numPixels(); i++) {
-      // tricky math! we use each pixel as a fraction of the full 384-color wheel
-      // (thats the i / strip.numPixels() part)
-      // Then add in j which makes the colors go around per pixel
-      // the % 384 is to make the wheel cycle around
-      strip.setPixelColor(i, Wheel( ((i * 384 / strip.numPixels()) + j) % 384) );
-    }  
-    strip.show();   // write all the pixels out
-    delay(wait);
-  }
-}
-
-// fill the dots one after the other with said color
-// good for testing purposes
-void colorWipe(uint32_t c, uint8_t wait) {
-  int i;
-  
-  for (i=0; i < strip.numPixels(); i++) {
-      strip.setPixelColor(i, c);
-      strip.show();
-      delay(wait);
-  }
-}
-
-// Chase a dot down the strip
-// good for testing purposes
-void colorChase(uint32_t c, uint8_t wait) {
-  int i;
-  
-  for (i=0; i < strip.numPixels(); i++) {
-    strip.setPixelColor(i, 0);  // turn all pixels off
-  } 
-  
-  for (i=0; i < strip.numPixels(); i++) {
-      strip.setPixelColor(i, c);
-      if (i == 0) { 
-        strip.setPixelColor(strip.numPixels()-1, 0);
-      } else {
-        strip.setPixelColor(i-1, 0);
-      }
-      strip.show();
-      delay(wait);
-  }
-}
-
-/* Helper functions */
-
-//Input a value 0 to 384 to get a color value.
-//The colours are a transition r - g -b - back to r
-
-uint32_t Wheel(uint16_t WheelPos)
-{
-  byte r, g, b;
-  switch(WheelPos / 128)
-  {
-    case 0:
-      r = 127 - WheelPos % 128;   //Red down
-      g = WheelPos % 128;      // Green up
-      b = 0;                  //blue off
-      break; 
-    case 1:
-      g = 127 - WheelPos % 128;  //green down
-      b = WheelPos % 128;      //blue up
-      r = 0;                  //red off
-      break; 
-    case 2:
-      b = 127 - WheelPos % 128;  //blue down 
-      r = WheelPos % 128;      //red up
-      g = 0;                  //green off
-      break; 
-  }
-  return(strip.Color(r,g,b));
+  // delay for a moment
+  delay(10);
 }
