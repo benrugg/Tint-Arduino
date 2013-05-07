@@ -1,49 +1,9 @@
-/* NOTE: In order to compile this sketch, first make sure to edit apps-conf.h in the WiShield library so
-         it defines APP_WISERVER and doesn't define APP_WEBSERVER
-*/
-
-/* NOTE: This sketch seems to work unreliably unless it's given some time to run between restarts. It
-         also may need to be restarted once or twice to actually work. (Try closing and reopening the
-         serial monitor to restart it). (Also, remember to wait a full minute for everything to start
-         and the red light to turn on).
+/* NOTE: This is the first RGB Wall sketch that's made for the Arduino Ethernet
 */
 
 
 #include "LPD8806.h"
 #include "SPI.h"
-#include <WiServer.h>
-
-
-// ------------------------------- Wireless set up -------------------------------
-
-#define WIRELESS_MODE_INFRA	1
-#define WIRELESS_MODE_ADHOC	2
-
-unsigned char local_ip[] = {192,168,1,150};	// IP address of WiShield
-unsigned char gateway_ip[] = {192,168,1,254};	// router or gateway IP address
-unsigned char subnet_mask[] = {255,255,255,0};	// subnet mask for the local network
-const prog_char ssid[] PROGMEM = {"NewWorld"};		// max 32 bytes
-
-unsigned char security_type = 2;	// 0 - open; 1 - WEP; 2 - WPA; 3 - WPA2
-
-// WPA/WPA2 passphrase
-const prog_char security_passphrase[] PROGMEM = {"Espionage99"};	// max 64 characters
-
-// WEP 128-bit keys
-// sample HEX keys
-prog_uchar wep_keys[] PROGMEM = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d,	// Key 0
-				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// Key 1
-				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,	// Key 2
-				  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00	// Key 3
-				};
-
-// setup the wireless mode
-// infrastructure - connect to AP
-// adhoc - connect to another WiFi device
-unsigned char wireless_mode = WIRELESS_MODE_INFRA;
-
-unsigned char ssid_len;
-unsigned char security_passphrase_len;
 
 
 
@@ -56,10 +16,15 @@ int numLEDs = 160;
 
 // create an instance of the LED strip class. use pin 6 for data in (DI) and
 // pin 8 for clock in (CI) (we're not using the faster hardware SPI (pins 11
-// and 13) because they're used by the wishield. in fact, almost all the
-// pins are used by the wishield)
+// and 13) because they're used by the Ethernet interface)
 LPD8806 strip = LPD8806(numLEDs, 6, 8);
 
+
+/*
+// create an instance of the LED strip class. Use hardware SPI, so connect DI
+// to pin 11 and CI to pin 13.
+LPD8806 strip = LPD8806(numLEDs);
+*/
 
 
 
@@ -72,14 +37,29 @@ boolean handleURLRequest(char* urlCharArray) {
     String urlString = String(urlCharArray);
     
     
+    // xxx
+    //Serial.println("Full String:");
+    //Serial.println(urlString);
+    
+    
     // if the url doesn't contain a comma, return false (404) (this is our quick
     // and dirty way of making sure hits like "/favicon.ico" won't mess with the
     // LEDs)
     if (urlString.indexOf(',') == -1) return false;
     
     
+    // clear the strip to start it over
+    // xxx can remove this later when we're in production and always getting the full number of pixels
+    for (int i = 0; i < numLEDs; i++) strip.setPixelColor(i, 0);
+    
+    
     // if the first character of the string is a forward slash, remove it
     if (urlString.charAt(0) == '/') urlString = urlString.substring(1);
+    
+    
+    // xxx
+    //Serial.println("No Slash:");
+    //Serial.println(urlString);
     
     
     // Parse the url to get the colors from it (in a format of 6 digit rgb hex codes, separated
@@ -99,6 +79,11 @@ boolean handleURLRequest(char* urlCharArray) {
       nextCommaIndex = urlString.indexOf(',');
       
       
+      // xxx
+      //Serial.println("nextCommaIndex:");
+      //Serial.println(nextCommaIndex);
+      
+      
       // if we don't have a comma remaining in the string, just get the rest of the string
       if (nextCommaIndex == -1) {
         
@@ -113,6 +98,13 @@ boolean handleURLRequest(char* urlCharArray) {
       }
       
       
+      // xxx
+      //Serial.println("currentHex:");
+      //Serial.println(currentHex);
+      //Serial.println("urlString:");
+      //Serial.println(urlString);
+      
+      
       // if the currentHex isn't 6 colors, skip it
       if (currentHex.length() != 6) continue;
       
@@ -121,15 +113,49 @@ boolean handleURLRequest(char* urlCharArray) {
       hexPart = currentHex.substring(0, 2);
       r = hexToDec(hexPart) / 2;
       
+      
+      // xxx
+      //Serial.println("currentHex:");
+      //Serial.println(currentHex);
+      //Serial.println("hexPart:");
+      //Serial.println(hexPart);
+      //Serial.println("r:");
+      //Serial.println(r);
+      
+      
       hexPart = currentHex.substring(2, 4);
       g = hexToDec(hexPart) / 2;
+      
+      
+      // xxx
+      //Serial.println("currentHex:");
+      //Serial.println(currentHex);
+      //Serial.println("hexPart:");
+      //Serial.println(hexPart);
+      //Serial.println("g:");
+      //Serial.println(g);
+      
       
       hexPart = currentHex.substring(4, 6);
       b = hexToDec(hexPart) / 2;
       
       
       // xxx
-      Serial.println(currentHex + ": (" + r + ", " + g + ", " + b + ")");
+      //Serial.println("currentHex:");
+      //Serial.println(currentHex);
+      //Serial.println("hexPart:");
+      //Serial.println(hexPart);
+      //Serial.println("b:");
+      //Serial.println(b);
+      
+      
+      // xxx
+      //Serial.println("currentHex again:");
+      //Serial.println(currentHex);
+      //Serial.println("currentHex plus colon:");
+      //Serial.println(currentHex + ":");
+      //Serial.println("currentHex plus rgb:");
+      //Serial.println(currentHex + ": (" + r + ", " + g + ", " + b + ")");
       
       
       // set the next LED to this color
@@ -192,22 +218,12 @@ void setup() {
   strip.show();
   
   
-  // Initialize WiServer and give it the event callback function for handling requests
-  WiServer.init(handleURLRequest);
-  
-  
-  // Enable Serial output and ask WiServer to generate log messages (optional)
-  // xxx turn off verbose mode later?...
-  Serial.begin(57600);
-  WiServer.enableVerboseMode(true);
+  // Enable Serial output for testing
+  Serial.begin(9600);
 }
 
 
 void loop() {
-
-  // Run WiServer
-  WiServer.server_task();
-  
   
   // delay for a moment
   delay(10);
@@ -220,6 +236,17 @@ void loop() {
 
 void serialEvent() {
   
+  String incomingString = "";
+  
+  while (Serial.available() > 0) {
+    
+    incomingString += (char)Serial.read();
+  }
+  
+  Serial.print("received: ");
+  Serial.println(incomingString);
+  
+  /*
   byte incomingByte;
   
   // send data only when you receive data:
@@ -229,26 +256,61 @@ void serialEvent() {
     incomingByte = Serial.read();
 
     // say what you got:
-    Serial.print("I received: ");
-    Serial.println(incomingByte, DEC);
+    //Serial.print("I received: ");
+    //Serial.println(incomingByte, DEC);
   }
+  */
+  
   
   char test1[ ] = "/FF00FF,00ee99,99cc78,ef742c";
   Serial.println("testing the first string");
   Serial.println(test1);
   handleURLRequest(test1);
   
-  delay(8000);
+  delay(2000);
   
   char test2[ ] = "/FF00FF,00ee99,99cc78,ef742c,FF00FF,00ee99,99cc78,ef742c";
   Serial.println("testing the second string");
   Serial.println(test2);
   handleURLRequest(test2);
   
-  delay(8000);
+  delay(2000);
   
   char test3[ ] = "/FF00FF,00ee99,99cc78,ef742c,FF00FF,00ee99,99cc78,ef742c,FF00FF,00ee99,99cc78,ef742c";
   Serial.println("testing the third string");
   Serial.println(test3);
   handleURLRequest(test3);
+  
+  delay(2000);
+  
+  char test4[ ] = "/7b4cdd,7058d8,6663d4,5b70d0,507ccb,4687c7,3b93c2,319fbe,26abba,1bb7b5";
+  Serial.println(test4);
+  handleURLRequest(test4);
+  
+  delay(2000);
+  
+  char test5[ ] = "/8046df,7d4ade,7b4cdd,784fdc,7453da,7355da,6f59d8,6e5ad7,6a5ed6,6762d5";
+  Serial.println(test5);
+  handleURLRequest(test5);
+  
+  delay(2000);
+  
+  
+  // The core Arduino code seems to have a bug. If these lines are uncommented, the whole thing 
+  // freezes after the first test!
+  
+  /*
+  //char test6[ ] = "/8046df,7d4ade,7b4cdd,784fdc,7453da,7355da,6f59d8,6e5ad7,6a5ed6,6762d5,6664d4,6267d3,6169d2,5d6dd1,5a71cf,5873cf,5576cd,5378cc,507ccb,4d80ca,4b82c9,4885c8,4687c7";
+  char test6[ ] = "/784fdc,6664d4,5378cc,418dc5,2da3bd,1bb7b5,33bfa9,5bc19c,83c48f,abc782,d3c974,fbcc67,ffa954,ff8643,ff6331,ff4020,ff1d0e,ff0008,ff0035,ff0065,ff0092,ff00be,ff00eb";
+  Serial.println(test6);
+  handleURLRequest(test6);
+  
+  delay(2000);
+  
+  char test7[ ] = "/8046df,7d4ade,7b4cdd,784fdc,7453da,7355da,6f59d8,6e5ad7,6a5ed6,6762d5,6664d4,6267d3,6169d2,5d6dd1,5a71cf"; //,5873cf,5576cd,5378cc,507ccb,4d80ca,4b82c9,4885c8,4687c7,438bc6,3f8fc4,3e90c4,3a94c2,3996c1,359ac0,329dbf,319fbe,2da3bd,2ca5bc,28a9bb,25acb9,23aeb9,20b2b7"; //,1eb4b6,1bb7b5,18bbb4,16bdb3,1dbdb1,21beaf,28bead,2fbfab,33bfa9,3abfa7,3ec0a6,45c0a3,4dc1a1,50c1a0,58c19d,5bc19c,62c29a,6ac297,6dc396,75c394,78c393,80c490,87c48e,8bc58d,92c58a,95c589,9dc686,a4c684,a8c683,afc780,b3c77f,bac87d,c1c87a,c5c879,ccc977,d0c976,d7c973,deca71,e2ca70,e9cb6d,edcb6c,f4cb6a,fbcc67,ffcc66,ffc663,ffc261,ffbc5e,ffb65b,ffb359,ffac56,ffa954,ffa351,ff9f50,ff994d,ff9349,ff8f48,ff8945,ff8643,ff8040,ff793d,ff763b,ff7038,ff6c36,ff6633,ff6030,ff5c2e,ff562b,ff5329,ff4d26,ff4623,ff4321,ff3d1e,ff391d,ff331a,ff2d16,ff2915,ff2312,ff2010,ff1a0d,ff130a,ff1008,ff0a05,ff0603,ff0000,ff0008,ff000c,ff0014,ff0018,ff0020,ff0028,ff002d,ff0035,ff0039,ff0041,ff0049,ff004d,ff0055,ff0059,ff0061,ff0069,ff006d,ff0075,ff0079,ff0082,ff008a,ff008e,ff0096,ff009a,ff00a2,ff00aa,ff00ae,ff00b6,ff00ba,ff00c2,ff00ca,ff00ce,ff00d7,ff00db,ff00e3,ff00eb,ff00ef,ff00f7,ff00fb";
+  Serial.println(test7);
+  handleURLRequest(test7);
+  
+  delay(2000);
+  */
 }
