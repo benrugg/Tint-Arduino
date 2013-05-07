@@ -1,9 +1,11 @@
 /* NOTE: This sketch is made for the Arduino Ethernet.
          
-         **This one does not work!**
+         **This one only works with 64 LED's**
          
          Changes from the last one:
-          - attempting to fade from existing colors to new ones
+          - made the colors fade! (but just found out that the arduino doesn't have enough memory
+            to be able to handle the storage for all the colors we need in our arrays. two 192
+            element arrays work, but two 288 element arrays don't)
 */
 
 
@@ -22,15 +24,21 @@ boolean isDebugging = true;
 // ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
-// (NOTE: make sure to change this in the lines below for currentColors and newColors
-int numLEDs = 160;
+// (NOTE: make sure to set the lines below for currentColors and newColors
+//        to 3 times this number!)
+int numLEDs = 64;
 
+
+// initialize some other variables used for the fade animation
+int fadeSteps = 20;
+unsigned int currentColors[192];
+unsigned int newColors[192];
 
 
 // create an instance of the LED strip class. use pin 6 for data in (DI) and
 // pin 8 for clock in (CI) (we're not using the faster hardware SPI (pins 11
 // and 13) because they're used by the Ethernet interface)
-LPD8806 strip = LPD8806(numLEDs, 6, 8);
+LPD8806 strip = LPD8806(numLEDs * 2, 6, 8);
 
 
 /*
@@ -38,12 +46,6 @@ LPD8806 strip = LPD8806(numLEDs, 6, 8);
 // to pin 11 and CI to pin 13.
 LPD8806 strip = LPD8806(numLEDs);
 */
-
-
-// initialize some other variables used for the fade animation
-int fadeSteps = 40;
-unsigned int currentColors[160][3];
-unsigned int newColors[160][3];
 
 
 
@@ -316,13 +318,13 @@ void storeNewColor(int ledNum, String hexColor) {
   unsigned int b;
   
   hexPart = hexColor.substring(0, 2);
-  newColors[ledNum][0] = hexToDec(hexPart) / 2;
+  newColors[ledNum * 3] = hexToDec(hexPart) / 2;
   
   hexPart = hexColor.substring(2, 4);
-  newColors[ledNum][1] = hexToDec(hexPart) / 2;
+  newColors[(ledNum * 3) + 1] = hexToDec(hexPart) / 2;
   
   hexPart = hexColor.substring(4, 6);
-  newColors[ledNum][2] = hexToDec(hexPart) / 2;
+  newColors[(ledNum * 3) + 2] = hexToDec(hexPart) / 2;
 }
 
 
@@ -351,45 +353,44 @@ unsigned int hexToDec(String hexString) {
 
 void initializeCurrentColors() {
   
-  for (int i = 0; i < numLEDs; i++) {
+  for (int i = 0; i < numLEDs * 3; i++) {
     
-    for (int j = 0; j < 3; j++) {
-      
-      currentColors[i][j] = 0;
-    }
+    currentColors[i] = 0;
   }
 }
 
 
 void fadeInNewColors() {
   
+  int i;
+  
   // for each fade step...
   for (int fadeStep = 1; fadeStep <= fadeSteps; fadeStep++) {
     
-    // for each LED...
-    for (int ledNum = 0; ledNum < numLEDs; ledNum++) {
+    // for each LED (actually each r/g/b component of each LED)...
+    for (i = 0; i < numLEDs * 3; i += 3) {
       
       // calculate the next color for each LED
-      unsigned int r = (((newColors[ledNum][0] - currentColors[ledNum][0]) / fadeSteps) * fadeStep) + currentColors[ledNum][0];
-      unsigned int g = (((newColors[ledNum][1] - currentColors[ledNum][1]) / fadeSteps) * fadeStep) + currentColors[ledNum][1];
-      unsigned int b = (((newColors[ledNum][2] - currentColors[ledNum][2]) / fadeSteps) * fadeStep) + currentColors[ledNum][2];
+      unsigned int r = ((((int) newColors[i] - (int) currentColors[i]) / fadeSteps) * fadeStep) + currentColors[i];
+      unsigned int g = ((((int) newColors[i + 1] - (int) currentColors[i + 1]) / fadeSteps) * fadeStep) + currentColors[i + 1];
+      unsigned int b = ((((int) newColors[i + 2] - (int) currentColors[i + 2]) / fadeSteps) * fadeStep) + currentColors[i + 2];
       
       
       // and then set it in the strip
-      strip.setPixelColor(ledNum, r, g, b);
+      strip.setPixelColor((i / 3) * 2, r, g, b);
+      strip.setPixelColor(((i / 3) * 2) + 1, r, g, b);
     }
     
     
     // show the colors (at their current fade step)
     strip.show();
+    delay(10);
   }
   
   
   // after the fade is done, overwrite the current colors with the new colors
-  for (int i = 0; i < numLEDs; i++) {
+  for (i = 0; i < numLEDs * 3; i++) {
     
-    currentColors[i][0] = newColors[i][0];
-    currentColors[i][1] = newColors[i][1];
-    currentColors[i][2] = newColors[i][2];
+    currentColors[i] = newColors[i];
   }
 }
