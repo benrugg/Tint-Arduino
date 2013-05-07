@@ -13,6 +13,12 @@
 
 
 
+// ------------------------------- debugging -------------------------------
+
+boolean isDebugging = false;
+
+
+
 // ------------------------------- LED setup -------------------------------
 
 // declare the number of LEDs
@@ -57,8 +63,8 @@ void setup() {
   strip.show();
   
   
-  // Enable Serial output for testing
-  Serial.begin(9600);
+  // Enable Serial output for debugging
+  if (isDebugging) Serial.begin(9600);
   
   
   // start the Ethernet connection and the server
@@ -67,8 +73,11 @@ void setup() {
   
   
   // output what IP the server is listening on
-  Serial.print("server is at ");
-  Serial.println(Ethernet.localIP());
+  if (isDebugging) {
+    
+    Serial.print("server is at ");
+    Serial.println(Ethernet.localIP());
+  }
 }
 
 
@@ -82,7 +91,7 @@ void loop() {
   if (client) {
     
     // output for debugging
-    Serial.println("new client");
+    if (isDebugging) Serial.println("new client");
     
     
     // keep track of which LED we're setting
@@ -117,7 +126,7 @@ void loop() {
         
         
         // print what we received, for debugging
-        Serial.write(nextChar);
+        if (isDebugging) Serial.write(nextChar);
         
         
         // if we're still waiting for a command, ignore everything until we get to a question mark or a newline
@@ -129,8 +138,10 @@ void loop() {
           if (nextChar == '\n') {
             
             // output for debugging
-            Serial.println("\n\nreceived an invalid command\n");
+            if (isDebugging) Serial.println("\n\nreceived an invalid command\n");
             
+            
+            // set the flags
             receivedInvalidCommand = true;
             isWaitingForCommand = false;
             isAtEndOfLine = true;
@@ -140,8 +151,10 @@ void loop() {
           } else if (nextChar == '?') {
             
             // output for debugging
-            Serial.println("\n\nstarting to receive command\n");
+            if (isDebugging) Serial.println("\n\nstarting to receive command\n");
             
+            
+            // set the flag
             isWaitingForCommand = false;
             isReceivingCommand = true;
           }
@@ -185,7 +198,7 @@ void loop() {
               
               
               // output for debugging
-              Serial.println("\n\nfinished command\n");
+              if (isDebugging) Serial.println("\n\nfinished command\n");
             }
             
             
@@ -257,7 +270,7 @@ void loop() {
     
     
     // output for debugging
-    Serial.println("client disonnected");
+    if (isDebugging) Serial.println("client disonnected");
   }
 }
 
