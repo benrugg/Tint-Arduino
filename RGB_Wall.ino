@@ -16,7 +16,7 @@
 
 
 // ------------------------------- Wireless set up -------------------------------
-
+/*
 #define WIRELESS_MODE_INFRA	1
 #define WIRELESS_MODE_ADHOC	2
 
@@ -46,7 +46,7 @@ unsigned char wireless_mode = WIRELESS_MODE_INFRA;
 unsigned char ssid_len;
 unsigned char security_passphrase_len;
 
-
+*/
 
 
 // ------------------------------- LED setup -------------------------------
@@ -65,7 +65,7 @@ int numLEDs = 160;
 // -------------------------- handle color commands ------------------------
 
 // this function handles url requests
-boolean handleURLRequest(char* urlString) {
+boolean handleURLRequest(char* urlCharArray) {
     
     /*
     // xxx old code, here for reference:
@@ -87,61 +87,84 @@ boolean handleURLRequest(char* urlString) {
     */
     
     
-    // parse the url to get the colors from it
-    int i = 0;
-    int currentNumber = 0;
-    int currentNumDigits = 0;
-    char currentChar;
+    // make a string from the character array so we can manipulte it more easily
+    String urlString = String(urlCharArray);
     
-    while(urlString[i] != '\0') {
+    
+    // parse the url to get the colors from it (in a format of 6 digit rgb hex codes, separated
+    // by commas: E690CC,EFD988,9BA456, etc) (also, convert it from 8 bit (0-255) to 7 bit (0-127))
+    String currentHex;
+    int nextCommaIndex = 0;
+    String hexPart;
+    unsigned int r;
+    unsigned int g;
+    unsigned int b;
+    
+    while (urlString.length() > 0) {
       
-      // get the current character in the string
-      currentChar = urlString[i];
+      // get the next index of a comma
+      nextCommaIndex = urlString.indexOf(',');
       
       
-      // as a fail-safe, quit if we've been processing more than a certain number of digits
-      i++;
-      if (i > 100) break;
-      
-      
-      // if our character is not a number or a comma, skip it
-      if (byte(currentChar) != 44 && (byte(currentChar) < 48 || byte(currentChar) > 57)) continue;
-      
-      
-      // if we've added up more than 3 digits, skip this number
-      if (currentNumDigits > 3) {
+      // if we don't have a comma remaining in the string, just get the rest of the string
+      if (nextCommaIndex == -1) {
         
-        currentNumber = 0;
-        currentNumDigits = 0;
+        currentHex = urlString;
+        urlString = "";
         
-        continue;
+      // else, get the portion of the string up to the next comma
+      } else {
+        
+        currentHex = urlString.substring(0, nextCommaIndex);
+        urlString = urlString.substring(nextCommaIndex + 1);
       }
       
       
-      // when we get to a comma, then we've got our number
-      if (currentChar == ',') {
-        
-        Serial.println(currentNumber);
-        
-        currentNumber = 0;
-        currentNumDigits = 0;
-        
-        continue;
-      }
+      // if the currentHex isn't 6 colors, skip it
+      if (currentHex.length() != 6) continue;
       
       
-      // otherwise, add the current character to our number
-      currentNumber = (currentNumber * 10) + (int(currentChar) - 48);
-      currentNumDigits++;
+      // convert the 8 bit hex into 7 bit rgb
+      hexPart = currentHex.substring(0, 2);
+      r = hexToDec(hexPart) / 2;
+      
+      hexPart = currentHex.substring(2, 4);
+      g = hexToDec(hexPart) / 2;
+      
+      hexPart = currentHex.substring(4, 6);
+      b = hexToDec(hexPart) / 2;
+      
+      
+      // xxx
+      Serial.println(currentHex + ": (" + r + ", " + g + ", " + b + ")");
     }
-    
-    
-    // print the last number
-    Serial.println(currentNumber);
     
     
     // return true to output status 200
     return true;
+}
+
+
+unsigned int hexToDec(String hexString) {
+  
+  // NOTE: This function can handle a positive hex value from 0 - 65,535 (a four digit hex string).
+  //       For larger/longer values, change "unsigned int" to "long" in both places.
+  
+  unsigned int decValue = 0;
+  int nextInt;
+  
+  for (int i = 0; i < hexString.length(); i++) {
+    
+    nextInt = int(hexString.charAt(i));
+    if (nextInt >= 48 && nextInt <= 57) nextInt = map(nextInt, 48, 57, 0, 9);
+    if (nextInt >= 65 && nextInt <= 70) nextInt = map(nextInt, 65, 70, 10, 15);
+    if (nextInt >= 97 && nextInt <= 102) nextInt = map(nextInt, 97, 102, 10, 15);
+    nextInt = constrain(nextInt, 0, 15);
+    
+    decValue = (decValue * 16) + nextInt;
+  }
+  
+  return decValue;
 }
 
 
@@ -152,19 +175,23 @@ boolean handleURLRequest(char* urlString) {
 void setup() {
   
   // Initialize WiServer and give it the event callback function for handling requests
-  WiServer.init(handleURLRequest);
+  //WiServer.init(handleURLRequest);
   
   // Enable Serial output and ask WiServer to generate log messages (optional)
   // xxx turn off verbose mode later?...
   Serial.begin(57600);
-  WiServer.enableVerboseMode(true);
+  //WiServer.enableVerboseMode(true);
 }
 
 void loop(){
 
   // Run WiServer
-  WiServer.server_task();
+  //WiServer.server_task();
+  
+  char charTest[ ] = "E690CC,EFD988,9BA460,00FF00,000000,FFFFFF,EEEEEE";
+  
+  handleURLRequest(charTest);
   
   // delay for a moment
-  delay(10);
+  delay(1000);
 }
